@@ -1,4 +1,4 @@
-name: Build LibreWolf from Source
+name: Build LibreWolf on Ubuntu
 
 on:
   push:
@@ -9,50 +9,40 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: archlinux:latest  # Use Arch Linux container
 
     steps:
       - name: Install dependencies
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git sudo ccache python311
+          sudo apt update && sudo apt install -y wget tar git ccache
+          wget http://mirrors.kernel.org/archlinux/iso/latest/archlinux-bootstrap-x86_64.tar.gz
+          tar -xzf archlinux-bootstrap-x86_64.tar.gz
 
-      - name: Set Python 3.11 as default
+      - name: Set up Arch chroot
         run: |
-          ln -sf /usr/bin/python3.11 /usr/bin/python
-          python --version  # Check Python version
+          sudo mkdir -p /mnt/arch
+          sudo mv root.x86_64 /mnt/arch/root
+          sudo cp /etc/resolv.conf /mnt/arch/root/etc/resolv.conf
+          sudo mount --bind /mnt/arch/root /mnt/arch/root
+          echo "Server = https://mirror.rackspace.com/archlinux/\$repo/os/\$arch" | sudo tee /mnt/arch/root/etc/pacman.d/mirrorlist
 
-      - name: Enable ccache
+      - name: Install base-devel inside Arch chroot
         run: |
-          echo 'export PATH="/usr/lib/ccache/bin:$PATH"' >> /etc/profile
-          echo 'CCACHE_DIR=/home/builduser/.ccache' >> /etc/environment
+          sudo chroot /mnt/arch/root /bin/bash -c "pacman -Syu --noconfirm && pacman -S --noconfirm base-devel git ccache"
 
-      - name: Create non-root user
+      - name: Clone LibreWolf repo
         run: |
-          useradd -m builduser
-          echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
-          chown -R builduser:builduser /home/builduser
-
-      - name: Optimize makepkg.conf
-        run: |
-          sed -i 's/^#MAKEFLAGS="-j2"/MAKEFLAGS="-j$(nproc)"/' /etc/makepkg.conf
-          sed -i 's/^#BUILDDIR/BUILDDIR/' /etc/makepkg.conf
-          sed -i 's|^BUILDDIR=.*|BUILDDIR=/tmp/makepkg|' /etc/makepkg.conf
-
-      - name: Clone LibreWolf repository
-        run: sudo -u builduser git clone --depth=1 https://gitlab.com/librewolf-community/browser/arch.git /home/builduser/librewolf
+          sudo chroot /mnt/arch/root /bin/bash -c "git clone --depth=1 https://gitlab.com/librewolf-community/browser/arch.git /librewolf"
 
       - name: Import Mozilla GPG key
-        run: sudo -u builduser gpg --recv-key EBE41E90F6F12F6D
+        run: |
+          sudo chroot /mnt/arch/root /bin/bash -c "gpg --recv-key EBE41E90F6F12F6D"
 
       - name: Build LibreWolf
         run: |
-          mount -o size=8G -t tmpfs none /tmp  # Use tmpfs for faster build
-          cd /home/builduser/librewolf
-          sudo -u builduser makepkg -si --noconfirm
+          sudo chroot /mnt/arch/root /bin/bash -c "cd /librewolf && makepkg -si --noconfirm"
 
       - name: Upload built package
         uses: actions/upload-artifact@v4
         with:
           name: librewolf-package
-          path: /home/builduser/librewolf/*.pkg.tar.zst
+          path: /mnt/arch/root/librewolf/*.pkg.tar.zst
