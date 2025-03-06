@@ -1,8 +1,6 @@
 name: Build LibreWolf from Source
 
 on:
-  schedule:
-    - cron: "0 0 * * 1"  # Runs every Monday at midnight UTC
   push:
     branches:
       - master
@@ -11,19 +9,35 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: archlinux:latest  # Use an Arch Linux container
+    container: archlinux:latest  # Use Arch Linux container
 
     steps:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git sudo
+          pacman -S --noconfirm base-devel git sudo ccache python311
+
+      - name: Set Python 3.11 as default
+        run: |
+          ln -sf /usr/bin/python3.11 /usr/bin/python
+          python --version  # Check Python version
+
+      - name: Enable ccache
+        run: |
+          echo 'export PATH="/usr/lib/ccache/bin:$PATH"' >> /etc/profile
+          echo 'CCACHE_DIR=/home/builduser/.ccache' >> /etc/environment
 
       - name: Create non-root user
         run: |
           useradd -m builduser
           echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
           chown -R builduser:builduser /home/builduser
+
+      - name: Optimize makepkg.conf
+        run: |
+          sed -i 's/^#MAKEFLAGS="-j2"/MAKEFLAGS="-j$(nproc)"/' /etc/makepkg.conf
+          sed -i 's/^#BUILDDIR/BUILDDIR/' /etc/makepkg.conf
+          sed -i 's|^BUILDDIR=.*|BUILDDIR=/tmp/makepkg|' /etc/makepkg.conf
 
       - name: Clone LibreWolf repository
         run: sudo -u builduser git clone --depth=1 https://gitlab.com/librewolf-community/browser/arch.git /home/builduser/librewolf
@@ -33,6 +47,7 @@ jobs:
 
       - name: Build LibreWolf
         run: |
+          mount -o size=8G -t tmpfs none /tmp  # Use tmpfs for faster build
           cd /home/builduser/librewolf
           sudo -u builduser makepkg -si --noconfirm
 
