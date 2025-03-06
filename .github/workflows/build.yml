@@ -1,48 +1,48 @@
-name: Build LibreWolf on Ubuntu
+name: Build ytdownloader-gui-bin
 
 on:
   push:
     branches:
-      - master
+      - main
   workflow_dispatch:  # Allows manual triggering
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    container: archlinux:latest  # Use Arch Linux container
 
     steps:
       - name: Install dependencies
         run: |
-          sudo apt update && sudo apt install -y wget tar git ccache
-          wget http://mirrors.kernel.org/archlinux/iso/latest/archlinux-bootstrap-x86_64.tar.gz
-          tar -xzf archlinux-bootstrap-x86_64.tar.gz
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git sudo
 
-      - name: Set up Arch chroot
+      - name: Create non-root user
         run: |
-          sudo mkdir -p /mnt/arch
-          sudo mv root.x86_64 /mnt/arch/root
-          sudo cp /etc/resolv.conf /mnt/arch/root/etc/resolv.conf
-          sudo mount --bind /mnt/arch/root /mnt/arch/root
-          echo "Server = https://mirror.rackspace.com/archlinux/\$repo/os/\$arch" | sudo tee /mnt/arch/root/etc/pacman.d/mirrorlist
+          useradd -m builduser
+          echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          chown -R builduser:builduser /home/builduser
 
-      - name: Install base-devel inside Arch chroot
+      - name: Install `paru` (AUR helper)
         run: |
-          sudo chroot /mnt/arch/root /bin/bash -c "pacman -Syu --noconfirm && pacman -S --noconfirm base-devel git ccache"
+          sudo -u builduser git clone https://aur.archlinux.org/paru-bin.git /home/builduser/paru
+          cd /home/builduser/paru
+          sudo -u builduser makepkg -si --noconfirm
 
-      - name: Clone LibreWolf repo
+      - name: Install `electron30-bin`
         run: |
-          sudo chroot /mnt/arch/root /bin/bash -c "git clone --depth=1 https://gitlab.com/librewolf-community/browser/arch.git /librewolf"
+          sudo -u builduser paru -S --noconfirm --skipreview electron30-bin
 
-      - name: Import Mozilla GPG key
-        run: |
-          sudo chroot /mnt/arch/root /bin/bash -c "gpg --recv-key EBE41E90F6F12F6D"
+      - name: Clone AUR package `ytdownloader-gui-bin`
+        run: sudo -u builduser git clone --depth=1 https://aur.archlinux.org/ytdownloader-gui-bin.git /home/builduser/ytdownloader
 
-      - name: Build LibreWolf
+      - name: Build `ytdownloader-gui-bin`
         run: |
-          sudo chroot /mnt/arch/root /bin/bash -c "cd /librewolf && makepkg -si --noconfirm"
+          cd /home/builduser/ytdownloader
+          sudo -u builduser makepkg -si --noconfirm
 
       - name: Upload built package
         uses: actions/upload-artifact@v4
         with:
-          name: librewolf-package
-          path: /mnt/arch/root/librewolf/*.pkg.tar.zst
+          name: ytdownloader-gui-bin
+          path: /home/builduser/ytdownloader/*.pkg.tar.zst
