@@ -17,21 +17,27 @@ jobs:
       - name: Install dependencies
         run: |
           pacman -Syu --noconfirm
-          pacman -S --noconfirm base-devel git
+          pacman -S --noconfirm base-devel git sudo
 
-      - name: Clone LibreWolf Arch repository
-        run: git clone --depth=1 https://gitlab.com/librewolf-community/browser/arch.git librewolf
+      - name: Create non-root user
+        run: |
+          useradd -m builduser
+          echo 'builduser ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
+          chown -R builduser:builduser /home/builduser
+
+      - name: Clone LibreWolf repository
+        run: sudo -u builduser git clone --depth=1 https://gitlab.com/librewolf-community/browser/arch.git /home/builduser/librewolf
 
       - name: Import Mozilla GPG key
-        run: gpg --recv-key EBE41E90F6F12F6D
+        run: sudo -u builduser gpg --recv-key EBE41E90F6F12F6D
 
       - name: Build LibreWolf
         run: |
-          cd librewolf
-          makepkg -si --noconfirm
+          cd /home/builduser/librewolf
+          sudo -u builduser makepkg -si --noconfirm
 
       - name: Upload built package
         uses: actions/upload-artifact@v4
         with:
           name: librewolf-package
-          path: librewolf/*.pkg.tar.zst
+          path: /home/builduser/librewolf/*.pkg.tar.zst
