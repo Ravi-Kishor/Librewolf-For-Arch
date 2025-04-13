@@ -1,4 +1,4 @@
-name: Build Mutter-git for Arch Linux
+name: Build Mutter-git inside Arch Linux container
 
 on:
   workflow_dispatch:
@@ -10,39 +10,27 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container:
-      image: archlinux:base-devel
 
     steps:
-      - name: Install base-devel and git
+      - name: Clone Mutter-git AUR repo
         run: |
-          pacman -Syu --noconfirm
-          pacman -S --noconfirm git sudo
+          git clone https://aur.archlinux.org/mutter-git.git
 
-      - name: Create build user (non-root)
+      - name: Build inside Arch container
         run: |
-          useradd -m builder
-          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-          chown -R builder .
-
-      - name: Disable signature checking
-        run: |
-          sed -i 's/^#?PKGEXT=.*/PKGEXT=.pkg.tar.zst/' /etc/makepkg.conf
-          sed -i 's/^#?USE_COLOR.*/USE_COLOR="n"/' /etc/makepkg.conf
-          sed -i 's/^#?GPGKEY=.*/GPGKEY=""/' /etc/makepkg.conf
-          sed -i 's/^#?VERIFYSIG=.*/VERIFYSIG="n"/' /etc/makepkg.conf
-
-      - name: Clone Mutter-git AUR PKGBUILD
-        run: |
-          sudo -u builder git clone https://aur.archlinux.org/mutter-git.git
-
-      - name: Build Mutter package with makepkg
-        run: |
-          cd mutter-git
-          sudo -u builder makepkg -s --noconfirm
+          docker run --rm -v ${{ github.workspace }}:/build -w /build archlinux:base-devel bash -c "
+            pacman -Syu --noconfirm &&
+            pacman -S --noconfirm git sudo &&
+            useradd -m builder &&
+            echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers &&
+            chown -R builder /build &&
+            sed -i 's/^#?VERIFYSIG=.*/VERIFYSIG=\"n\"/' /etc/makepkg.conf &&
+            cd mutter-git &&
+            sudo -u builder makepkg -s --noconfirm
+          "
 
       - name: Upload .pkg.tar.zst artifact
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v3
         with:
           name: mutter-git-pkg
           path: mutter-git/*.pkg.tar.zst
