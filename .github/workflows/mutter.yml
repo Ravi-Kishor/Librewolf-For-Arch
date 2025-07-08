@@ -1,43 +1,49 @@
-name: Build Mutter-git inside Arch container
+name: Build XanMod x64v2 Kernel
 
 on:
   workflow_dispatch:
 
-permissions:
-  contents: read
-  actions: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
 
     steps:
-      - name: Checkout (to get a workspace)
-        uses: actions/checkout@v4
-
-      - name: Install Docker if needed
+      - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y docker.io
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm base-devel git ncurses libelf cpio bc openssl \
+            pahole xmlto python-sphinx graphviz imagemagick perl tar xz
 
-      - name: Clone Mutter-git AUR repo
-        run: git clone https://aur.archlinux.org/mutter-git.git
-
-      - name: Build inside Arch container using Docker
+      - name: Clone XanMod kernel from GitLab
         run: |
-          docker run --rm -v $PWD:/build -w /build archlinux:base-devel bash -c "
-            pacman -Syu --noconfirm &&
-            pacman -S --noconfirm git sudo &&
-            useradd -m builder &&
-            echo 'builder ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers &&
-            chown -R builder /build &&
-            sed -i 's/^#?VERIFYSIG=.*/VERIFYSIG=\"n\"/' /etc/makepkg.conf &&
-            cd mutter-git &&
-            sudo -u builder makepkg -s --noconfirm
-          "
+          git clone --depth=1 --branch master https://gitlab.com/xanmod/linux.git
+          cd linux
+          make x86_64_xanmod_v2_defconfig
 
-      - name: Upload built package
-        uses: actions/upload-artifact@v3
+      - name: Build kernel and modules
+        run: |
+          cd linux
+          make -j$(nproc)
+          make modules -j$(nproc)
+
+      - name: Install modules and headers
+        run: |
+          cd linux
+          mkdir -p ../out/mod ../out/headers ../out/kernel
+          make modules_install INSTALL_MOD_PATH=../out/mod
+          make headers_install INSTALL_HDR_PATH=../out/headers
+          cp arch/x86/boot/bzImage ../out/kernel/
+          cp System.map .config ../out/kernel/
+
+      - name: Archive kernel as .tar.xz
+        run: |
+          cd out
+          tar -cJf ../xanmod-x64v2-kernel.tar.xz *
+
+      - name: Upload archive
+        uses: actions/upload-artifact@v4
         with:
-          name: mutter-git-pkg
-          path: mutter-git/*.pkg.tar.zst
+          name: xanmod-x64v2-kernel
+          path: xanmod-x64v2-kernel.tar.xz
