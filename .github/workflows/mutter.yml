@@ -18,7 +18,7 @@ jobs:
 
       - name: Clone XanMod kernel from GitLab
         run: |
-          git clone --depth=1 --branch master https://gitlab.com/xanmod/linux.git
+          git clone --depth=1 --branch 6.15 https://gitlab.com/xanmod/linux.git
           cd linux
           make x86_64_xanmod_v2_defconfig
 
